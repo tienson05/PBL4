@@ -1,0 +1,8 @@
+# Bỏ file tạm và thư mục build
+build/
+build*/
+*.pro.user
+*.o
+*.log
+*.tmp
+.DS_Store
