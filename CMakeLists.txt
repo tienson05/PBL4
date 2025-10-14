@@ -7,4 +7,5 @@ qt_standard_project_setup()
 
 add_subdirectory(src)
 add_subdirectory(third_party)
+add_subdirectory(resources)
 
