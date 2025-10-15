@@ -1,7 +1,20 @@
-# This is lib file -> use add_library
+# --- Bật tự động xử lý Qt ---
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+
+# --- Thư viện UI ---
 add_library(UILib STATIC
     NetworkViewer.hpp
     NetworkViewer.cpp
+    WelcomePage.hpp
+    WelcomePage.cpp
+    MainWindow.cpp
+    MainWindow.hpp
+    HeaderWidget.hpp
+    HeaderWidget.cpp
+    CapturePage.hpp
+    CapturePage.cpp
 )
 
 # Cho phép các module khác include file header trong UI/
