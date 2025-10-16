@@ -13,7 +13,7 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
 
 private slots:
-    void showCapturePage();  // khi double-click interface
+    void showCapturePage(const QString &interfaceName);  // khi double-click interface
 
 private:
     HeaderWidget *header;

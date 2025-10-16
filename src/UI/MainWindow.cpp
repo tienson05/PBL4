@@ -21,7 +21,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // --- Stacked Widget để chuyển trang ---
     stackedWidget = new QStackedWidget(this);
-    mainLayout->addWidget(stackedWidget, 1);  // chiếm toàn bộ phần còn lại
+    mainLayout->addWidget(stackedWidget, 1); // chiếm toàn bộ phần còn lại
 
     // --- Tạo các trang ---
     welcomePage = new WelcomePage(this);
@@ -35,10 +35,19 @@ MainWindow::MainWindow(QWidget *parent)
     setCentralWidget(central);
 
     // Khi double-click interface trong WelcomePage, chuyển sang CapturePage
+    // Dòng connect này đã đúng và sẽ tự động hoạt động với slot mới
     connect(welcomePage, &WelcomePage::interfaceSelected, this, &MainWindow::showCapturePage);
 }
 
-void MainWindow::showCapturePage()
+// THAY ĐỔI: Hàm này giờ đây nhận tên interface và sử dụng nó
+void MainWindow::showCapturePage(const QString &interfaceName)
 {
+    // 1. Chuyển sang trang CapturePage
     stackedWidget->setCurrentWidget(capturePage);
+
+    // 2. Gọi một hàm public trên CapturePage để thiết lập interface và bắt đầu capture
+    //    (Giả sử bạn có hàm startInitialCapture trong CapturePage)
+    if (capturePage) {
+        capturePage->startInitialCapture(interfaceName);
+    }
 }
