@@ -1,8 +1,11 @@
 #pragma once
 
-#include <QMainWindow>
+#include <QWidget> // THAY ĐỔI: Kế thừa từ QWidget
 
-class WelcomePage : public QMainWindow
+// Khai báo trước để giảm thời gian biên dịch
+class QListWidgetItem;
+
+class WelcomePage : public QWidget // THAY ĐỔI: Lớp cơ sở là QWidget
 {
     Q_OBJECT
 
@@ -10,8 +13,10 @@ public:
     explicit WelcomePage(QWidget *parent = nullptr);
 
 signals:
+    // Tín hiệu này đã đúng, không cần thay đổi
     void interfaceSelected(const QString &interfaceName);
 
 private:
-    void setupCentralWidget(QWidget *parent);
+    // THAY ĐỔI: Thêm khai báo cho hàm setupUI
+    void setupUI();
 };

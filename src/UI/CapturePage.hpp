@@ -1,7 +1,13 @@
-#pragma once
+#ifndef CAPTUREPAGE_HPP
+#define CAPTUREPAGE_HPP
+
 #include <QWidget>
 
-class QLabel;
+// Khai báo trước
+class QPushButton;
+class QLabel; // THÊM MỚI: Dùng để hiển thị tên interface
+class NetworkViewer;
+class NetworkScanner;
 
 class CapturePage : public QWidget
 {
@@ -9,11 +15,29 @@ class CapturePage : public QWidget
 
 public:
     explicit CapturePage(QWidget *parent = nullptr);
-    void startCapture(const QString &interfaceName);
 
-signals:
-    void backToWelcome();  // nếu sau này bạn có nút quay lại
+    // Hàm này nhận tên interface từ MainWindow
+    void startInitialCapture(const QString &interfaceName);
+
+private slots:
+    void startCapture();
+    void stopCapture();
+    void pauseCapture();
 
 private:
-    QLabel *statusLabel;
+    // XÓA BỎ: QComboBox *interfaceBox;
+
+    // THAY THẾ: Bằng một QLabel để hiển thị và một QString để lưu trữ
+    QLabel *interfaceNameLabel;
+    QString currentInterfaceName;
+
+    // Các thành phần còn lại giữ nguyên
+    QPushButton *startBtn;
+    QPushButton *stopBtn;
+    QPushButton *pauseBtn;
+    NetworkViewer *viewer;
+    NetworkScanner *scanner;
+    bool isPaused;
 };
+
+#endif // CAPTUREPAGE_HPP
