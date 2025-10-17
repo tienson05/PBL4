@@ -1,11 +1,13 @@
 #ifndef CAPTUREPAGE_HPP
 #define CAPTUREPAGE_HPP
 
-#include <QWidget>
+#include <QWidget>       // THÊM MỚI: Cần thiết vì lớp kế thừa từ QWidget
+#include <QList>
+#include "PacketInfo.hpp"
 
-// Khai báo trước
+// Khai báo trước (Forward declarations) để giảm thời gian biên dịch
 class QPushButton;
-class QLabel; // THÊM MỚI: Dùng để hiển thị tên interface
+class QLabel;
 class NetworkViewer;
 class NetworkScanner;
 
@@ -16,28 +18,33 @@ class CapturePage : public QWidget
 public:
     explicit CapturePage(QWidget *parent = nullptr);
 
-    // Hàm này nhận tên interface từ MainWindow
+    // --- CÁC HÀM ĐIỀU KHIỂN CÔNG KHAI (do MainWindow gọi) ---
     void startInitialCapture(const QString &interfaceName);
+    void startCaptureFromFile(const QString &filePath);
+    void saveCurrentCapture();
 
 private slots:
-    void startCapture();
-    void stopCapture();
-    void pauseCapture();
+    void onRestartCaptureClicked();
+    void onStopCaptureClicked();
+    void onPauseCaptureClicked();
 
 private:
-    // XÓA BỎ: QComboBox *interfaceBox;
+    void startCaptureInternal();
 
-    // THAY THẾ: Bằng một QLabel để hiển thị và một QString để lưu trữ
-    QLabel *interfaceNameLabel;
-    QString currentInterfaceName;
+    // --- BIẾN THÀNH VIÊN ---
+    QLabel *sourceNameLabel;
+    QString currentCaptureSource;
+    bool isLiveCapture;
 
-    // Các thành phần còn lại giữ nguyên
-    QPushButton *startBtn;
+    QPushButton *restartBtn;
     QPushButton *stopBtn;
     QPushButton *pauseBtn;
     NetworkViewer *viewer;
     NetworkScanner *scanner;
     bool isPaused;
+
+    // Bộ nhớ đệm để lưu các gói tin, giống như Wireshark
+    QList<PacketInfo> capturedPackets;
 };
 
 #endif // CAPTUREPAGE_HPP

@@ -5,6 +5,9 @@
 
 #include <QVBoxLayout>
 #include <QStackedWidget>
+#include <QFileDialog> // Đảm bảo có dòng này
+#include <QDir>
+#include <QCoreApplication>   // THÊM MỚI
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -21,33 +24,65 @@ MainWindow::MainWindow(QWidget *parent)
 
     // --- Stacked Widget để chuyển trang ---
     stackedWidget = new QStackedWidget(this);
-    mainLayout->addWidget(stackedWidget, 1); // chiếm toàn bộ phần còn lại
+    mainLayout->addWidget(stackedWidget, 1);
 
     // --- Tạo các trang ---
     welcomePage = new WelcomePage(this);
     capturePage = new CapturePage(this);
 
-    // Thêm các trang vào stacked widget
     stackedWidget->addWidget(welcomePage);
     stackedWidget->addWidget(capturePage);
 
-    // Gán central widget
     setCentralWidget(central);
+    setWindowTitle("WiresharkMini");
+    resize(1280, 800);
 
-    // Khi double-click interface trong WelcomePage, chuyển sang CapturePage
-    // Dòng connect này đã đúng và sẽ tự động hoạt động với slot mới
+    // --- KẾT NỐI TÍN HIỆU ---
+    // 1. Từ WelcomePage -> MainWindow (để bắt đầu live capture)
     connect(welcomePage, &WelcomePage::interfaceSelected, this, &MainWindow::showCapturePage);
+
+    // 2. THÊM MỚI: Từ WelcomePage -> MainWindow (để mở file từ nút bấm)
+    connect(welcomePage, &WelcomePage::openFileRequested, this, &MainWindow::handleOpenFileRequest);
+
+    // 3. Từ HeaderWidget -> MainWindow (để Mở/Lưu file từ menu)
+    connect(header, &HeaderWidget::openFileRequested, this, &MainWindow::handleOpenFileRequest);
+    connect(header, &HeaderWidget::saveFileRequested, this, &MainWindow::handleSaveFileRequest);
 }
 
-// THAY ĐỔI: Hàm này giờ đây nhận tên interface và sử dụng nó
 void MainWindow::showCapturePage(const QString &interfaceName)
 {
-    // 1. Chuyển sang trang CapturePage
     stackedWidget->setCurrentWidget(capturePage);
+    capturePage->startInitialCapture(interfaceName);
+}
 
-    // 2. Gọi một hàm public trên CapturePage để thiết lập interface và bắt đầu capture
-    //    (Giả sử bạn có hàm startInitialCapture trong CapturePage)
-    if (capturePage) {
-        capturePage->startInitialCapture(interfaceName);
+void MainWindow::handleOpenFileRequest()
+{
+    // 1. Lấy đường dẫn thư mục chứa file thực thi (.exe hoặc App)
+    QString appDir = QCoreApplication::applicationDirPath();
+    // 2. Tạo đường dẫn đến thư mục 'FileSave'
+    QString defaultDir = appDir + "/FileSave";
+    // 3. Tạo thư mục nếu nó chưa tồn tại
+    QDir dir(defaultDir);
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
+
+    QString filePath = QFileDialog::getOpenFileName(
+        this,
+        tr("Mở File Pcap"),
+        defaultDir, // <-- THAY ĐỔI: Sử dụng đường dẫn mặc định mới
+        tr("Packet Capture Files (*.pcap *.pcapng);;All Files (*)")
+        );
+
+    if (!filePath.isEmpty()) {
+        stackedWidget->setCurrentWidget(capturePage);
+        capturePage->startCaptureFromFile(filePath);
+    }
+}
+
+void MainWindow::handleSaveFileRequest()
+{
+    if (stackedWidget->currentWidget() == capturePage) {
+        capturePage->saveCurrentCapture();
     }
 }

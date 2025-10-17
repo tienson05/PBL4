@@ -1,17 +1,8 @@
 #pragma once
 
-#include <QMainWindow>
-#include <QMenuBar>
-#include <QMenu>
-#include <QAction>
-#include <QLabel>
-#include <QLineEdit>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QWidget>
-#include <QFrame>
-#include <QPushButton>
-#include <QGraphicsDropShadowEffect>
+
+class QVBoxLayout;
 
 class HeaderWidget : public QWidget
 {
@@ -20,14 +11,23 @@ class HeaderWidget : public QWidget
 public:
     explicit HeaderWidget(QWidget *parent = nullptr);
 
+signals:
+    // Tín hiệu cho menu File
+    void openFileRequested(); // Giữ lại Open
+    void saveFileRequested(); // Giữ lại Save As
+
+    // Tín hiệu cho menu Edit
+    void editCutRequested();
+    void editCopyRequested();
+
+    // Tín hiệu cho menu Capture
+    void captureStartRequested();
+
 private slots:
+    // Các slot này chỉ để điều khiển cửa sổ
     void minimizeRequested();
     void maximizeRequested();
     void closeRequested();
-    void onFileNew();
-    void onFileOpen();
-    void onEditCut();
-    void onEditCopy();
 
 private:
     void setupTitleBar(QWidget *parent, QVBoxLayout *mainLayout);
