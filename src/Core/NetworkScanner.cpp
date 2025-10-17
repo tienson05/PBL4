@@ -1,76 +1,77 @@
 #include "NetworkScanner.hpp"
-#include <arpa/inet.h>
-#include <netinet/ip.h>
-#include <netinet/tcp.h>
-#include <netinet/udp.h>
-#include <netinet/if_ether.h>
-#include <netinet/ip_icmp.h> // Thêm header cho ICMP
+#include <pcap.h>
 #include <QDateTime>
 #include <QDebug>
-#include <QStringList>
+#include <QFileInfo>
 
-// --- THÊM MỚI: Cấu trúc cơ bản cho MDNS Header ---
-struct mdns_header {
-    quint16 id;
-    quint16 flags;
-    quint16 num_questions;
-    quint16 num_answers;
-    quint16 num_authorities;
-    quint16 num_additionals;
-};
+// Các thư viện cần thiết cho việc phân tích gói tin chi tiết
+#include <arpa/inet.h>
+#include <netinet/if_ether.h>
+#include <netinet/ip.h>
+#include <netinet/ip_icmp.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
 
-// Hàm trợ giúp để phân tích tên trong gói tin DNS/MDNS
-QString parse_dns_name(const u_char* &reader, const u_char* start_of_packet) {
-    QString name;
-    while (*reader != 0) {
-        if (!name.isEmpty()) {
-            name.append('.');
-        }
-        int len = *reader;
-        reader++;
-        for (int i = 0; i < len; i++) {
-            // SỬA LỖI: Chuyển đổi u_char thành QChar trước khi thêm vào QString
-            name.append(QChar(*(reader++)));
-        }
-    }
-    reader++; // Bỏ qua byte null cuối cùng
-    return name;
-}
+// --- Triển khai các CONSTRUCTOR ---
+NetworkScanner::NetworkScanner(const QString &interfaceName, QObject *parent)
+    : QThread(parent),
+    handle(nullptr),
+    pcapDumper(nullptr),
+    sourceName(interfaceName),
+    isFileMode(false),
+    running(false),
+    paused(false)
+{}
 
-
-NetworkScanner::NetworkScanner(QObject *parent)
-    : QThread(parent), handle(nullptr), running(false), paused(false) {}
+NetworkScanner::NetworkScanner(const QString &filePath, bool isFile, QObject *parent)
+    : QThread(parent),
+    handle(nullptr),
+    pcapDumper(nullptr),
+    sourceName(filePath),
+    isFileMode(true),
+    running(false),
+    paused(false)
+{}
 
 NetworkScanner::~NetworkScanner() {
     if (isRunning()) {
         stopCapture();
         wait();
     }
-}
-
-bool NetworkScanner::openInterface(const QString &interfaceName) {
-    char errbuf[PCAP_ERRBUF_SIZE];
-    handle = pcap_open_live(interfaceName.toStdString().c_str(), BUFSIZ, 1, 500, errbuf);
-    if (!handle) {
-        qWarning() << "Error opening interface:" << interfaceName << ":" << errbuf;
-        return false;
+    if (pcapDumper) {
+        pcap_dump_close(pcapDumper);
     }
-    currentInterface = interfaceName;
-    return true;
 }
 
+// --- HÀM RUN HOÀN CHỈNH ---
 void NetworkScanner::run() {
     running = true;
+    char errbuf[PCAP_ERRBUF_SIZE];
+
+    if (isFileMode) {
+        handle = pcap_open_offline(sourceName.toStdString().c_str(), errbuf);
+    } else {
+        handle = pcap_open_live(sourceName.toStdString().c_str(), BUFSIZ, 1, 500, errbuf);
+    }
+
+    if (!handle) {
+        emit errorOccurred(QString("Error opening source: %1").arg(errbuf));
+        return;
+    }
+
     struct pcap_pkthdr *header;
     const u_char *data;
 
     while (running) {
-        if (paused) {
-            msleep(200);
-            continue;
-        }
+        if (paused) { msleep(100); continue; }
+
         int res = pcap_next_ex(handle, &header, &data);
         if (res > 0) {
+            if (pcapDumper) {
+                pcap_dump(reinterpret_cast<u_char*>(pcapDumper), header, data);
+            }
+
+            // ### LOGIC PHÂN TÍCH GÓI TIN CHI TIẾT ĐẦY ĐỦ ###
             PacketInfo packet;
             packet.timestamp = QDateTime::fromSecsSinceEpoch(header->ts.tv_sec).toString("hh:mm:ss.zzz");
             packet.length = header->len;
@@ -84,7 +85,7 @@ void NetworkScanner::run() {
 
                 if (iph->ip_p == IPPROTO_TCP) {
                     packet.protocol = "TCP";
-                    if(header->len >= sizeof(ether_header) + iph->ip_hl * 4 + sizeof(tcphdr)) {
+                    if (header->len >= sizeof(ether_header) + iph->ip_hl * 4 + sizeof(tcphdr)) {
                         struct tcphdr *tcph = (struct tcphdr *)(data + sizeof(ether_header) + iph->ip_hl * 4);
                         quint16 srcPort = ntohs(tcph->th_sport);
                         quint16 dstPort = ntohs(tcph->th_dport);
@@ -98,8 +99,6 @@ void NetworkScanner::run() {
                         if(tcph->th_flags & TH_ACK) flags << "ACK";
                         if(tcph->th_flags & TH_FIN) flags << "FIN";
                         if(tcph->th_flags & TH_RST) flags << "RST";
-                        if(tcph->th_flags & TH_PUSH) flags << "PSH";
-                        if(tcph->th_flags & TH_URG) flags << "URG";
                         QString flagStr = flags.isEmpty() ? "" : QString("[%1] ").arg(flags.join(", "));
 
                         packet.info = QString("%1 → %2 %3Seq=%4 Ack=%5 Win=%6")
@@ -108,63 +107,58 @@ void NetworkScanner::run() {
                     }
                 } else if (iph->ip_p == IPPROTO_UDP) {
                     packet.protocol = "UDP";
-                    if(header->len >= sizeof(ether_header) + iph->ip_hl * 4 + sizeof(udphdr)) {
+                    if (header->len >= sizeof(ether_header) + iph->ip_hl * 4 + sizeof(udphdr)) {
                         struct udphdr *udph = (struct udphdr *)(data + sizeof(ether_header) + iph->ip_hl * 4);
                         quint16 srcPort = ntohs(udph->uh_sport);
                         quint16 dstPort = ntohs(udph->uh_dport);
 
-                        // --- NÂNG CẤP: PHÂN TÍCH GÓI TIN MDNS ---
                         if (dstPort == 5353 || srcPort == 5353) {
                             packet.protocol = "MDNS";
-                            const u_char *payload = data + sizeof(ether_header) + iph->ip_hl * 4 + sizeof(udphdr);
-                            struct mdns_header *mdnsh = (struct mdns_header *)payload;
-
-                            // Kiểm tra đây có phải là một câu hỏi (query) không
-                            if (ntohs(mdnsh->num_questions) > 0 && (ntohs(mdnsh->flags) & 0x8000) == 0) {
-                                const u_char *qname_ptr = payload + sizeof(mdns_header);
-                                QString question_name = parse_dns_name(qname_ptr, data);
-                                packet.info = QString("Standard query 0x0000 PTR %1").arg(question_name);
-                            } else {
-                                packet.info = "MDNS Packet";
-                            }
+                            packet.info = "Standard query";
                         } else if (srcPort == 53 || dstPort == 53) {
                             packet.protocol = "DNS";
-                            packet.info = QString("Standard query"); // Giả định
+                            packet.info = "Standard query";
                         } else {
-                            // SỬA LỖI: Sử dụng uh_ulen thay vì uh_len
                             packet.info = QString("%1 → %2 Len=%3").arg(srcPort).arg(dstPort).arg(ntohs(udph->uh_ulen) - sizeof(udphdr));
                         }
                     }
                 } else if (iph->ip_p == IPPROTO_ICMP) {
                     packet.protocol = "ICMP";
-                    if(header->len >= sizeof(ether_header) + iph->ip_hl * 4 + sizeof(icmphdr)) {
+                    if (header->len >= sizeof(ether_header) + iph->ip_hl * 4 + sizeof(icmphdr)) {
                         struct icmphdr *icmph = (struct icmphdr *)(data + sizeof(ether_header) + iph->ip_hl * 4);
                         if(icmph->type == ICMP_ECHO) packet.info = "Echo (ping) request";
                         else if(icmph->type == ICMP_ECHOREPLY) packet.info = "Echo (ping) reply";
                         else packet.info = "ICMP Packet";
                     }
                 } else {
-                    packet.protocol = "Other";
-                    packet.info = "IP Packet";
+                    packet.protocol = "Other IP";
+                    packet.info = QString("Protocol: %1").arg(iph->ip_p);
                 }
+            } else if (ntohs(eth->ether_type) == ETHERTYPE_ARP) {
+                packet.protocol = "ARP";
+                packet.info = "Address Resolution Protocol";
             } else {
-                // Thêm phân tích cho ARP
-                if (ntohs(eth->ether_type) == ETHERTYPE_ARP) {
-                    packet.protocol = "ARP";
-                    packet.srcIP = "N/A";
-                    packet.dstIP = "Broadcast";
-                    packet.info = "Who has...? Tell...";
-                } else {
-                    packet.protocol = "Non-IP";
-                    packet.info = "Ethernet Frame";
-                }
+                packet.protocol = "Non-IP";
+                packet.info = QString("EtherType: 0x%1").arg(ntohs(eth->ether_type), 4, 16, QChar('0'));
             }
+
             emit packetCaptured(packet);
-        } else if (res == 0) {
+
+        } else if (res == 0) { // Timeout
             continue;
-        } else {
+        } else if (res == -2) { // End of file
+            break;
+        } else { // Error
+            if (running) emit errorOccurred(pcap_geterr(handle));
             break;
         }
+    }
+
+    // ### DỌN DẸP AN TOÀN TRƯỚC KHI KẾT THÚC ###
+    if (pcapDumper) {
+        pcap_dump_flush(pcapDumper); // Ép ghi dữ liệu từ bộ đệm xuống file
+        pcap_dump_close(pcapDumper);
+        pcapDumper = nullptr;
     }
 
     if (handle) {
@@ -174,12 +168,11 @@ void NetworkScanner::run() {
     emit captureStopped();
 }
 
+// --- CÁC HÀM ĐIỀU KHIỂN VÀ TIỆN ÍCH ---
 void NetworkScanner::stopCapture() {
-    if (running) {
-        running = false;
-        if (handle) {
-            pcap_breakloop(handle);
-        }
+    running = false;
+    if (handle) {
+        pcap_breakloop(handle);
     }
 }
 
@@ -187,49 +180,36 @@ void NetworkScanner::setPaused(bool paused) {
     this->paused = paused;
 }
 
-
-// Các hàm saveToPcap và openFromPcap giữ nguyên
-void NetworkScanner::saveToPcap(const QString &filePath) {
-    if (!handle) return;
-    pcap_dumper_t *dumper = pcap_dump_open(handle, filePath.toStdString().c_str());
-    if (!dumper) return;
-    // Lưu lại các gói tin bắt được (có thể mở rộng sau)
-    pcap_dump_close(dumper);
+bool NetworkScanner::startSavingToFile(const QString &filePath) {
+    if (pcapDumper) {
+        pcap_dump_close(pcapDumper);
+    }
+    if (!handle) {
+        emit errorOccurred("Capture is not running. Cannot save.");
+        return false;
+    }
+    pcapDumper = pcap_dump_open(handle, filePath.toStdString().c_str());
+    if (!pcapDumper) {
+        emit errorOccurred(QString("Error opening file for saving: %1").arg(pcap_geterr(handle)));
+        return false;
+    }
+    qDebug() << "Started saving packets to" << filePath;
+    return true;
 }
 
-bool NetworkScanner::openFromPcap(const QString &filePath) {
-    char errbuf[PCAP_ERRBUF_SIZE];
-    handle = pcap_open_offline(filePath.toStdString().c_str(), errbuf);
-    return handle != nullptr;
-}
-QList<QPair<QString, QString>> NetworkScanner::getDevices()
-{
+QList<QPair<QString, QString>> NetworkScanner::getDevices() {
     QList<QPair<QString, QString>> deviceList;
     pcap_if_t *alldevs;
     char errbuf[PCAP_ERRBUF_SIZE];
-
-    // Tìm tất cả các thiết bị
     if (pcap_findalldevs(&alldevs, errbuf) == -1) {
         qWarning() << "Error in pcap_findalldevs:" << errbuf;
-        return deviceList; // Trả về danh sách rỗng nếu có lỗi
+        return deviceList;
     }
-
-    // Duyệt qua danh sách và thêm vào deviceList
     for (pcap_if_t *d = alldevs; d != nullptr; d = d->next) {
-        // Lấy tên hệ thống
         QString systemName = QString::fromLatin1(d->name);
-
-        // Lấy mô tả, cung cấp giá trị mặc định nếu không có
-        QString description = d->description
-                                  ? QString::fromLatin1(d->description)
-                                  : "No description available";
-
-        // Thêm cặp dữ liệu (tên, mô tả) vào danh sách
+        QString description = d->description ? QString::fromLatin1(d->description) : "No description available";
         deviceList.append({systemName, description});
     }
-
-    // Giải phóng bộ nhớ đã cấp phát
     pcap_freealldevs(alldevs);
-
     return deviceList;
 }
