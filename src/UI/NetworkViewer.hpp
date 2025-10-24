@@ -6,7 +6,7 @@
 #include <QSplitter>
 #include <QLabel> // Thêm header cho thanh trạng thái
 #include <QMap>   // Thêm header để lưu trữ số lượng gói tin
-#include "NetworkScanner.hpp"
+#include "PacketInfo.hpp"
 
 // Forward declarations for protocol headers to keep this file clean
 struct ether_header;

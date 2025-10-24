@@ -14,6 +14,7 @@ Dependencies
 Qt 6.5+
 libpcap (install via sudo apt-get install libpcap-dev)
 
+sudo chmod +s /usr/sbin/setcap
 
 ---
 

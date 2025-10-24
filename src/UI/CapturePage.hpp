@@ -1,7 +1,7 @@
 #ifndef CAPTUREPAGE_HPP
 #define CAPTUREPAGE_HPP
 
-#include <QWidget>       // THÊM MỚI: Cần thiết vì lớp kế thừa từ QWidget
+#include <QWidget>
 #include <QList>
 #include "PacketInfo.hpp"
 
@@ -9,7 +9,7 @@
 class QPushButton;
 class QLabel;
 class NetworkViewer;
-class NetworkScanner;
+class PacketSniffer;
 
 class CapturePage : public QWidget
 {
@@ -40,7 +40,7 @@ private:
     QPushButton *stopBtn;
     QPushButton *pauseBtn;
     NetworkViewer *viewer;
-    NetworkScanner *scanner;
+    PacketSniffer *scanner;
     bool isPaused;
 
     // Bộ nhớ đệm để lưu các gói tin, giống như Wireshark

@@ -14,3 +14,7 @@ target_link_libraries(App PRIVATE
     UILib
 )
 
+add_custom_command(TARGET App POST_BUILD
+    COMMAND setcap cap_net_raw,cap_net_admin=eip $<TARGET_FILE:App>
+    COMMENT "Setting network capture permissions on App"
+)

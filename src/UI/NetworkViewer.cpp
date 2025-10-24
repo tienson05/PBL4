@@ -3,17 +3,18 @@
 #include <QHeaderView>
 #include <QTreeWidgetItem>
 #include <QDebug>
+#include <QScrollBar>
 #include <QStringList>
 #include <net/ethernet.h>
 #include <netinet/ether.h>
 #include <algorithm> // Cần cho std::sort
 
-// Bao gồm các header cho việc phân tích gói tin
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 #include <net/if_arp.h>
+#include <arpa/inet.h>
 
 // Các cấu trúc header chưa được định nghĩa trong các file hệ thống chuẩn
 struct dns_header {
@@ -82,12 +83,13 @@ NetworkViewer::NetworkViewer(QWidget *parent) : QWidget(parent) {
 }
 
 void NetworkViewer::addPacket(const PacketInfo &packet) {
-    // --- NÂNG CẤP: Cập nhật thống kê ---
+    QScrollBar *vbar = packetListTable->verticalScrollBar();
+    bool atBottom = (vbar->value() == vbar->maximum());
+
     totalPacketCount++;
     protocolCounts[packet.protocol]++;
     updateStats();
 
-    // --- Phần còn lại giữ nguyên ---
     int row = packetListTable->rowCount();
     packetListTable->insertRow(row);
 
@@ -115,6 +117,9 @@ void NetworkViewer::addPacket(const PacketInfo &packet) {
     for(int i = 0; i < items.size(); ++i) {
         items[i]->setBackground(color);
         packetListTable->setItem(row, i, items[i]);
+    }
+    if (atBottom) {
+        packetListTable->scrollToBottom();
     }
 }
 

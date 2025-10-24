@@ -1,6 +1,6 @@
 #include "CapturePage.hpp"
 #include "NetworkViewer.hpp"
-#include "NetworkScanner.hpp" // THÊM DÒNG NÀY ĐỂ SỬA LỖI
+#include "PacketSniffer.hpp"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -13,7 +13,7 @@
 #include <QDateTime>
 #include <pcap.h>
 #include <QDir>
-#include <QCoreApplication>   // THÊM MỚI
+#include <QCoreApplication>
 
 CapturePage::CapturePage(QWidget *parent)
     : QWidget(parent),
@@ -95,13 +95,11 @@ void CapturePage::saveCurrentCapture()
         return;
     }
 
-    // ### SỬA LỖI WARNING CUỐI CÙNG ###
     // 1. Chuyển đổi QString sang std::string và lưu vào một biến để nó không bị hủy ngay lập tức.
     std::string filePathStd = filePath.toStdString();
 
     // 2. Sử dụng .c_str() trên biến đã được lưu trữ an toàn.
     pcap_dumper_t *dumper = pcap_dump_open(pcap_handle, filePathStd.c_str());
-    // ### KẾT THÚC SỬA LỖI ###
 
     if (!dumper) {
         QMessageBox::critical(this, "Save Error", QString("Could not open file for writing: %1").arg(pcap_geterr(pcap_handle)));
@@ -160,17 +158,17 @@ void CapturePage::startCaptureInternal() {
     pauseBtn->setText("Pause");
 
     if (isLiveCapture) {
-        scanner = new NetworkScanner(currentCaptureSource, this);
+        scanner = new PacketSniffer(currentCaptureSource, this);
     } else {
-        scanner = new NetworkScanner(currentCaptureSource, true, this);
+        scanner = new PacketSniffer(currentCaptureSource, true, this);
     }
 
-    connect(scanner, &NetworkScanner::packetCaptured, this, [this](const PacketInfo &packet){
+    connect(scanner, &PacketSniffer::packetCaptured, this, [this](const PacketInfo &packet){
         viewer->addPacket(packet);
         capturedPackets.append(packet);
     });
 
-    connect(scanner, &NetworkScanner::errorOccurred, this, [this](const QString &errorString){
+    connect(scanner, &PacketSniffer::errorOccurred, this, [this](const QString &errorString){
         QMessageBox::critical(this, "Capture Error", errorString);
     });
 

@@ -50,7 +50,7 @@ void WelcomePage::setupUI()
     welcome->adjustSize();
     pageLayout->addWidget(welcome, 0, Qt::AlignHCenter); // Căn giữa cho đẹp hơn
 
-    // --- Capture & Filter Section (Lấy từ giao diện chi tiết của file 1) ---
+    // --- Capture & Filter Section ---
     auto *captureLabel = new QLabel("Capture");
     captureLabel->setStyleSheet("margin: 20px 0px 0px 0px; padding: 10px 0px; color: #2C3E50; font-weight: bold; font-family: 'Segoe UI';");
     captureLabel->setFont(QFont("Segoe UI", 24, QFont::Bold));
@@ -77,7 +77,7 @@ void WelcomePage::setupUI()
     captureSectionLayout->addLayout(filterLayout);
     pageLayout->addLayout(captureSectionLayout);
 
-    // --- Interface List (Lấy logic đúng từ file 2) ---
+    // --- Interface List ---
     auto *list = new QListWidget(pageContent);
     const auto devices = NetworkScanner::getDevices();
     for (const auto &devicePair : devices) {
@@ -94,7 +94,7 @@ void WelcomePage::setupUI()
     )");
     pageLayout->addWidget(list);
 
-    // --- Nút "Mở File Pcap" (Lấy từ file 2) ---
+    // --- Nút "Mở File Pcap" ---
     auto *openFileBtn = new QPushButton("Mở File Pcap...", this);
     openFileBtn->setMinimumHeight(40);
     openFileBtn->setCursor(Qt::PointingHandCursor);
@@ -107,7 +107,7 @@ void WelcomePage::setupUI()
 
     mainLayout->addWidget(pageContent);
 
-    // --- KẾT NỐI TÍN HIỆU (Lấy logic đúng từ file 2) ---
+    // --- KẾT NỐI TÍN HIỆU ---
     connect(list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         QString interfaceName = item->data(Qt::UserRole).toString();
         if (!interfaceName.isEmpty()) {

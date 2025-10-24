@@ -3,6 +3,8 @@ add_library(CoreLib STATIC
     NetworkScanner.cpp
     NetworkScanner.hpp
     PacketInfo.hpp
+    PacketSniffer.cpp
+    PacketSniffer.hpp
 )
 
 # Đường dẫn tới thư viện libpcap trong thư mục third_party
