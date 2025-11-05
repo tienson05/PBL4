@@ -1,8 +1,8 @@
 #pragma once
 
-#include <QMainWindow> // THÊM MỚI: Dòng quan trọng nhất để sửa lỗi
+#include <QMainWindow>
 
-// Khai báo trước để giảm thời gian biên dịch
+// Khai báo trước
 class HeaderWidget;
 class WelcomePage;
 class CapturePage;
@@ -16,7 +16,8 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
 
 private slots:
-    void showCapturePage(const QString &interfaceName);
+    // --- THAY ĐỔI: Thêm tham số captureFilter ---
+    void showCapturePage(const QString &interfaceName, const QString &captureFilter);
     void handleOpenFileRequest();
     void handleSaveFileRequest();
 

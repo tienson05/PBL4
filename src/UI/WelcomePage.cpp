@@ -5,14 +5,15 @@
 #include <QHBoxLayout>
 #include <QListWidget>
 #include <QLabel>
-#include <QLineEdit>
+#include <QLineEdit> // <-- Include này đã có, rất tốt
 #include <QPushButton>
 #include <QGraphicsDropShadowEffect>
 #include <QFont>
 #include <QPair>
 
 WelcomePage::WelcomePage(QWidget *parent)
-    : QWidget(parent)
+    : QWidget(parent),
+    filterEdit(nullptr) // <-- THÊM MỚI: Khởi tạo
 {
     setupUI();
 }
@@ -29,7 +30,7 @@ void WelcomePage::setupUI()
     pageLayout->setContentsMargins(400, 80, 400, 50);
     pageLayout->setSpacing(10);
 
-    // --- Welcome Banner (Lấy từ giao diện chi tiết của file 1) ---
+    // --- Welcome Banner (Giữ nguyên) ---
     auto *welcome = new QLabel("Welcome to WiresharkMini");
     welcome->setAlignment(Qt::AlignCenter);
     welcome->setStyleSheet(R"(
@@ -48,7 +49,7 @@ void WelcomePage::setupUI()
     welcome->setGraphicsEffect(shadow);
     welcome->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     welcome->adjustSize();
-    pageLayout->addWidget(welcome, 0, Qt::AlignHCenter); // Căn giữa cho đẹp hơn
+    pageLayout->addWidget(welcome, 0, Qt::AlignHCenter);
 
     // --- Capture & Filter Section ---
     auto *captureLabel = new QLabel("Capture");
@@ -59,8 +60,9 @@ void WelcomePage::setupUI()
     filterLabel->setStyleSheet("margin: 0px; padding-right: 4px; color: #2C3E50; font-weight: 500; font-family: 'Segoe UI';");
     filterLabel->setFont(QFont("Segoe UI", 15, QFont::DemiBold));
 
-    auto *filterEdit = new QLineEdit();
-    filterEdit->setPlaceholderText("Enter a capture filter...");
+    // --- THAY ĐỔI: Gán cho biến thành viên ---
+    filterEdit = new QLineEdit(); // Bỏ 'auto *'
+    filterEdit->setPlaceholderText("Enter a capture filter (e.g., 'tcp port 80')...");
     filterEdit->setStyleSheet(R"(
         QLineEdit { border: 1px solid #BDC3C7; border-radius: 8px; padding: 8px; background-color: white; }
         QLineEdit:focus { border: 2px solid #4A90E2; outline: none; }
@@ -77,14 +79,14 @@ void WelcomePage::setupUI()
     captureSectionLayout->addLayout(filterLayout);
     pageLayout->addLayout(captureSectionLayout);
 
-    // --- Interface List ---
+    // --- Interface List (Giữ nguyên) ---
     auto *list = new QListWidget(pageContent);
     const auto devices = NetworkScanner::getDevices();
     for (const auto &devicePair : devices) {
         QString systemName = devicePair.first;
         QString description = QString("%1 (%2)").arg(devicePair.second).arg(systemName);
         QListWidgetItem *item = new QListWidgetItem(description);
-        item->setData(Qt::UserRole, systemName); // Lưu tên hệ thống để sử dụng sau
+        item->setData(Qt::UserRole, systemName);
         list->addItem(item);
     }
     list->setStyleSheet(R"(
@@ -94,7 +96,7 @@ void WelcomePage::setupUI()
     )");
     pageLayout->addWidget(list);
 
-    // --- Nút "Mở File Pcap" ---
+    // --- Nút "Mở File Pcap" (Giữ nguyên) ---
     auto *openFileBtn = new QPushButton("Mở File Pcap...", this);
     openFileBtn->setMinimumHeight(40);
     openFileBtn->setCursor(Qt::PointingHandCursor);
@@ -107,11 +109,16 @@ void WelcomePage::setupUI()
 
     mainLayout->addWidget(pageContent);
 
-    // --- KẾT NỐI TÍN HIỆU ---
+    // --- KẾT NỐI TÍN HIỆU (THAY ĐỔI QUAN TRỌNG) ---
     connect(list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         QString interfaceName = item->data(Qt::UserRole).toString();
         if (!interfaceName.isEmpty()) {
-            emit interfaceSelected(interfaceName);
+
+            // Lấy text từ ô filter (đã là biến thành viên)
+            QString filterText = filterEdit->text();
+
+            // Gửi cả 2 thông tin đi
+            emit interfaceSelected(interfaceName, filterText);
         }
     });
 

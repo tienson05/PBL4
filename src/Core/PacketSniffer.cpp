@@ -1,35 +1,41 @@
 #include "PacketSniffer.hpp"
+#include "PacketParser.hpp" // <-- THÊM MỚI
 
-#include <QDateTime>
+#include <QDebug> // Chỉ cần cho debug
+// #include <QDateTime> // (Không cần nữa)
+// (Toàn bộ các include mạng như arpa/inet, netinet/ip... đã được xóa)
 
-#include <arpa/inet.h>
-#include <netinet/if_ether.h>
-#include <netinet/ip.h>
-#include <netinet/ip_icmp.h>
-#include <netinet/tcp.h>
-#include <netinet/udp.h>
-
-// --- Triển khai các CONSTRUCTOR ---
-PacketSniffer::PacketSniffer(const QString &interfaceName, QObject *parent)
+/**
+ * @brief Constructor cho live capture
+ */
+PacketSniffer::PacketSniffer(const QString &interfaceName, const QString &captureFilter, QObject *parent)
     : QThread(parent),
     handle(nullptr),
     pcapDumper(nullptr),
     sourceName(interfaceName),
     isFileMode(false),
+    m_captureFilter(captureFilter),
     running(false),
     paused(false)
 {}
 
+/**
+ * @brief Constructor cho đọc file
+ */
 PacketSniffer::PacketSniffer(const QString &filePath, bool isFile, QObject *parent)
     : QThread(parent),
     handle(nullptr),
     pcapDumper(nullptr),
     sourceName(filePath),
     isFileMode(true),
+    m_captureFilter(""),
     running(false),
     paused(false)
 {}
 
+/**
+ * @brief Destructor
+ */
 PacketSniffer::~PacketSniffer() {
     if (isRunning()) {
         stopCapture();
@@ -40,11 +46,14 @@ PacketSniffer::~PacketSniffer() {
     }
 }
 
-// --- RUN FUNCTION ---
+/**
+ * @brief Hàm chính của thread
+ */
 void PacketSniffer::run() {
     running = true;
     char errbuf[PCAP_ERRBUF_SIZE];
 
+    // Mở handle pcap
     if (isFileMode) {
         handle = pcap_open_offline(sourceName.toStdString().c_str(), errbuf);
     } else {
@@ -55,90 +64,39 @@ void PacketSniffer::run() {
         emit errorOccurred(QString("Error opening source: %1").arg(errbuf));
         return;
     }
+
+    // Áp dụng capture filter
+    if (!isFileMode && !m_captureFilter.isEmpty()) {
+        if (!applyFilter()) {
+            pcap_close(handle);
+            handle = nullptr;
+            return;
+            // Dừng thread nếu filter sai
+        }
+    }
+
     struct pcap_pkthdr *header;
     const u_char *data;
 
+    // Vòng lặp chính bắt gói tin
     while (running) {
         if (paused) { msleep(100); continue; }
 
         int res = pcap_next_ex(handle, &header, &data);
+
+        // Gói tin hợp lệ
         if (res > 0) {
             if (pcapDumper) {
                 pcap_dump(reinterpret_cast<u_char*>(pcapDumper), header, data);
             }
 
-            // ### LOGIC PHÂN TÍCH GÓI TIN CHI TIẾT ĐẦY ĐỦ ###
-            PacketInfo packet;
-            packet.timestamp = QDateTime::fromSecsSinceEpoch(header->ts.tv_sec).toString("hh:mm:ss.zzz");
-            packet.length = header->len;
-            packet.rawData = QByteArray(reinterpret_cast<const char*>(data), header->len);
+            // --- ĐÂY LÀ THAY ĐỔI QUAN TRỌNG ---
+            // 1. Phân tích gói tin bằng lớp Parser mới
+            PacketInfo packet = PacketParser::parse(header, data);
 
-            struct ether_header *eth = (struct ether_header *)data;
-            if (ntohs(eth->ether_type) == ETHERTYPE_IP) {
-                struct ip *iph = (struct ip *)(data + sizeof(struct ether_header));
-                packet.srcIP = inet_ntoa(iph->ip_src);
-                packet.dstIP = inet_ntoa(iph->ip_dst);
-
-                if (iph->ip_p == IPPROTO_TCP) {
-                    packet.protocol = "TCP";
-                    if (header->len >= sizeof(ether_header) + iph->ip_hl * 4 + sizeof(tcphdr)) {
-                        struct tcphdr *tcph = (struct tcphdr *)(data + sizeof(ether_header) + iph->ip_hl * 4);
-                        quint16 srcPort = ntohs(tcph->th_sport);
-                        quint16 dstPort = ntohs(tcph->th_dport);
-
-                        if (srcPort == 80 || dstPort == 80) packet.protocol = "HTTP";
-                        else if (srcPort == 443 || dstPort == 443) packet.protocol = "TLS";
-                        else if (srcPort == 53 || dstPort == 53) packet.protocol = "DNS";
-
-                        QStringList flags;
-                        if(tcph->th_flags & TH_SYN) flags << "SYN";
-                        if(tcph->th_flags & TH_ACK) flags << "ACK";
-                        if(tcph->th_flags & TH_FIN) flags << "FIN";
-                        if(tcph->th_flags & TH_RST) flags << "RST";
-                        QString flagStr = flags.isEmpty() ? "" : QString("[%1] ").arg(flags.join(", "));
-
-                        packet.info = QString("%1 → %2 %3Seq=%4 Ack=%5 Win=%6")
-                                          .arg(srcPort).arg(dstPort).arg(flagStr)
-                                          .arg(ntohl(tcph->th_seq)).arg(ntohl(tcph->th_ack)).arg(ntohs(tcph->th_win));
-                    }
-                } else if (iph->ip_p == IPPROTO_UDP) {
-                    packet.protocol = "UDP";
-                    if (header->len >= sizeof(ether_header) + iph->ip_hl * 4 + sizeof(udphdr)) {
-                        struct udphdr *udph = (struct udphdr *)(data + sizeof(ether_header) + iph->ip_hl * 4);
-                        quint16 srcPort = ntohs(udph->uh_sport);
-                        quint16 dstPort = ntohs(udph->uh_dport);
-
-                        if (dstPort == 5353 || srcPort == 5353) {
-                            packet.protocol = "MDNS";
-                            packet.info = "Standard query";
-                        } else if (srcPort == 53 || dstPort == 53) {
-                            packet.protocol = "DNS";
-                            packet.info = "Standard query";
-                        } else {
-                            packet.info = QString("%1 → %2 Len=%3").arg(srcPort).arg(dstPort).arg(ntohs(udph->uh_ulen) - sizeof(udphdr));
-                        }
-                    }
-                } else if (iph->ip_p == IPPROTO_ICMP) {
-                    packet.protocol = "ICMP";
-                    if (header->len >= sizeof(ether_header) + iph->ip_hl * 4 + sizeof(icmphdr)) {
-                        struct icmphdr *icmph = (struct icmphdr *)(data + sizeof(ether_header) + iph->ip_hl * 4);
-                        if(icmph->type == ICMP_ECHO) packet.info = "Echo (ping) request";
-                        else if(icmph->type == ICMP_ECHOREPLY) packet.info = "Echo (ping) reply";
-                        else packet.info = "ICMP Packet";
-                    }
-                } else {
-                    packet.protocol = "Other IP";
-                    packet.info = QString("Protocol: %1").arg(iph->ip_p);
-                }
-            } else if (ntohs(eth->ether_type) == ETHERTYPE_ARP) {
-                packet.protocol = "ARP";
-                packet.info = "Address Resolution Protocol";
-            } else {
-                packet.protocol = "Non-IP";
-                packet.info = QString("EtherType: 0x%1").arg(ntohs(eth->ether_type), 4, 16, QChar('0'));
-            }
-
+            // 2. Gửi gói tin đã phân tích đi
             emit packetCaptured(packet);
+            // --- TOÀN BỘ LOGIC IF/ELSE ĐÃ BỊ XÓA KHỎI ĐÂY ---
 
         } else if (res == 0) { // Timeout
             continue;
@@ -150,9 +108,9 @@ void PacketSniffer::run() {
         }
     }
 
-    // ### DỌN DẸP AN TOÀN TRƯỚC KHI KẾT THÚC ###
+    // Dọn dẹp
     if (pcapDumper) {
-        pcap_dump_flush(pcapDumper); // Ép ghi dữ liệu từ bộ đệm xuống file
+        pcap_dump_flush(pcapDumper);
         pcap_dump_close(pcapDumper);
         pcapDumper = nullptr;
     }
@@ -164,7 +122,38 @@ void PacketSniffer::run() {
     emit captureStopped();
 }
 
-// --- CÁC HÀM ĐIỀU KHIỂN VÀ TIỆN ÍCH ---
+/**
+ * @brief Hàm áp dụng capture filter (BPF)
+ */
+bool PacketSniffer::applyFilter()
+{
+    if (!handle) {
+        qDebug() << "Cannot apply filter: handle is null";
+        return false;
+    }
+    struct bpf_program filterProgram;
+    if (pcap_compile(handle, &filterProgram,
+                     m_captureFilter.toStdString().c_str(),
+                     1, PCAP_NETMASK_UNKNOWN) == -1) {
+        QString error = QString("Capture Filter compile error: %1").arg(pcap_geterr(handle));
+        qDebug() << error;
+        emit errorOccurred(error);
+        return false;
+    }
+    if (pcap_setfilter(handle, &filterProgram) == -1) {
+        QString error = QString("Capture Filter apply error: %1").arg(pcap_geterr(handle));
+        qDebug() << error;
+        emit errorOccurred(error);
+        pcap_freecode(&filterProgram);
+        return false;
+    }
+    pcap_freecode(&filterProgram);
+    qDebug() << "Capture filter applied successfully:" << m_captureFilter;
+    return true;
+}
+
+
+// --- CÁC HÀM ĐIỀU KHIỂN ---
 void PacketSniffer::stopCapture() {
     running = false;
     if (handle) {
@@ -176,6 +165,7 @@ void PacketSniffer::setPaused(bool paused) {
     this->paused = paused;
 }
 
+// SỬA LỖI GÕ NHẦM (PacketSnKiffer -> PacketSniffer)
 bool PacketSniffer::startSavingToFile(const QString &filePath) {
     if (pcapDumper) {
         pcap_dump_close(pcapDumper);
@@ -192,8 +182,3 @@ bool PacketSniffer::startSavingToFile(const QString &filePath) {
     qDebug() << "Started saving packets to" << filePath;
     return true;
 }
-
-
-
-
-

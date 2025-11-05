@@ -6,6 +6,7 @@
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QLabel>
+#include <QLineEdit>
 #include <QDebug>
 #include <QFileDialog>
 #include <QMessageBox>
@@ -14,14 +15,21 @@
 #include <pcap.h>
 #include <QDir>
 #include <QCoreApplication>
+#include <QRegularExpression> // Để tách chuỗi filter
 
 CapturePage::CapturePage(QWidget *parent)
     : QWidget(parent),
     scanner(nullptr),
     isLiveCapture(false),
-    isPaused(false)
+    isPaused(false),
+    m_captureFilter(""), // Bộ lọc BẮT GÓI (từ WelcomePage)
+    m_displayFilter("") // Bộ lọc HIỂN THỊ (từ ô filter trên trang này)
 {
     auto *mainLayout = new QVBoxLayout(this);
+    mainLayout->setContentsMargins(0, 5, 0, 0);
+    mainLayout->setSpacing(5);
+
+    // --- 1. Thanh điều khiển (Control Layout) ---
     auto *controlLayout = new QHBoxLayout();
     sourceNameLabel = new QLabel("Source: Not selected");
     sourceNameLabel->setStyleSheet("font-weight: bold; padding: 5px;");
@@ -34,29 +42,130 @@ CapturePage::CapturePage(QWidget *parent)
     controlLayout->addWidget(stopBtn);
     controlLayout->addWidget(pauseBtn);
     mainLayout->addLayout(controlLayout);
+
+    // --- 2. THANH FILTER (DISPLAY FILTER) ---
+    auto *filterLayout = new QHBoxLayout();
+    filterLayout->setContentsMargins(5, 0, 5, 0);
+    filterLineEdit = new QLineEdit(this);
+    filterLineEdit->setPlaceholderText("Apply a display filter... (e.g., 'icmp', '192.168.1.8')");
+    applyFilterButton = new QPushButton("Apply", this);
+    filterLayout->addWidget(filterLineEdit, 1);
+    filterLayout->addWidget(applyFilterButton);
+    mainLayout->addLayout(filterLayout);
+
+    // --- 3. Bảng NetworkViewer ---
     viewer = new NetworkViewer(this);
-    mainLayout->addWidget(viewer);
+    mainLayout->addWidget(viewer, 1);
+
+    // --- 4. Kết nối tín hiệu ---
     connect(restartBtn, &QPushButton::clicked, this, &CapturePage::onRestartCaptureClicked);
     connect(stopBtn, &QPushButton::clicked, this, &CapturePage::onStopCaptureClicked);
     connect(pauseBtn, &QPushButton::clicked, this, &CapturePage::onPauseCaptureClicked);
+
+    // Kết nối nút Apply và phím Enter
+    connect(applyFilterButton, &QPushButton::clicked, this, &CapturePage::onApplyFilterClicked);
+    connect(filterLineEdit, &QLineEdit::returnPressed, this, &CapturePage::onApplyFilterClicked);
 }
 
+// --- LOGIC DISPLAY FILTER ---
+void CapturePage::onApplyFilterClicked()
+{
+    // 1. Dùng m_displayFilter
+    m_displayFilter = filterLineEdit->text().trimmed().toLower();
+    qDebug() << "Display filter applied:" << m_displayFilter;
+
+    // 2. Làm mới toàn bộ bảng hiển thị bằng cách lọc lại master list
+    refreshPacketView();
+}
+
+/**
+ * @brief Lọc lại toàn bộ 'capturedPackets' và hiển thị trong 'viewer'.
+ */
+void CapturePage::refreshPacketView()
+{
+    // 1. Xóa sạch bảng hiển thị (nhưng không xóa 'capturedPackets')
+    viewer->clearData();
+
+    // 2. Lặp lại master list và thêm lại những cái phù hợp
+    for (const PacketInfo &packet : capturedPackets) {
+        // 3. Dùng m_displayFilter để kiểm tra
+        if (packetMatchesFilter(packet, m_displayFilter)) {
+            viewer->addPacket(packet);
+        }
+    }
+}
+
+/**
+ * @brief (ĐÃ CẬP NHẬT)
+ * Logic lọc mới, thông minh hơn. Tách filter thành các từ khóa.
+ */
+bool CapturePage::packetMatchesFilter(const PacketInfo& packet, const QString& filter)
+{
+    // Nếu filter rỗng, luôn luôn hiển thị (true)
+    if (filter.isEmpty()) {
+        return true;
+    }
+
+    // Tách filter thành các từ khóa (ví dụ: "tcp 80" -> ["tcp", "80"])
+    QStringList keywords = filter.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+
+    // Tạo một "siêu chuỗi" chứa toàn bộ thông tin gói tin (đã toLower)
+    QString packetMegaString = QString("%1 %2 %3 %4")
+                                   .arg(packet.protocol)
+                                   .arg(packet.srcIP)
+                                   .arg(packet.dstIP)
+                                   .arg(packet.info)
+                                   .toLower();
+
+    // Kiểm tra xem TẤT CẢ các từ khóa có trong siêu chuỗi không
+    for (const QString &keyword : keywords) {
+        if (!packetMegaString.contains(keyword)) {
+            // Chỉ cần MỘT từ khóa không khớp là false
+            return false;
+        }
+    }
+
+    // Nếu tất cả từ khóa đều khớp
+    return true;
+}
+
+
 // --- CÁC HÀM ĐIỀU KHIỂN CÔNG KHAI ---
-void CapturePage::startInitialCapture(const QString &interfaceName)
+
+/**
+ * @brief Bắt đầu live capture với một capture filter.
+ */
+void CapturePage::startInitialCapture(const QString &interfaceName, const QString &captureFilter)
 {
     isLiveCapture = true;
     currentCaptureSource = interfaceName;
+    m_captureFilter = captureFilter; // <-- LƯU BỘ LỌC BẮT GÓI
+
     sourceNameLabel->setText(QString("Interface: %1").arg(interfaceName));
     restartBtn->setEnabled(true);
+
+    // Reset bộ lọc hiển thị khi bắt đầu session mới
+    m_displayFilter = "";
+    filterLineEdit->setText("");
+
     startCaptureInternal();
 }
 
+/**
+ * @brief Bắt đầu capture từ file (không cần capture filter).
+ */
 void CapturePage::startCaptureFromFile(const QString &filePath)
 {
     isLiveCapture = false;
     currentCaptureSource = filePath;
+    m_captureFilter = ""; // Không áp dụng capture filter khi đọc file
     sourceNameLabel->setText(QString("File: %1").arg(QFileInfo(filePath).fileName()));
     restartBtn->setEnabled(false);
+
+    // Reset bộ lọc hiển thị
+    m_displayFilter = "";
+    filterLineEdit->setText("");
+
     startCaptureInternal();
 }
 
@@ -88,20 +197,19 @@ void CapturePage::saveCurrentCapture()
     }
     QString filePath = selectedFiles.first();
 
-    // --- Phần code ghi file pcap ---
     pcap_t *pcap_handle = pcap_open_dead(DLT_EN10MB, 65535);
     if (!pcap_handle) {
         QMessageBox::critical(this, "Save Error", "Could not create pcap handle for writing.");
         return;
     }
 
-    // 1. Chuyển đổi QString sang std::string và lưu vào một biến để nó không bị hủy ngay lập tức.
-    std::string filePathStd = filePath.toStdString();
+    std::string filePathStd = filePath.toStdString(); // Đã sửa lỗi
 
-    // 2. Sử dụng .c_str() trên biến đã được lưu trữ an toàn.
     pcap_dumper_t *dumper = pcap_dump_open(pcap_handle, filePathStd.c_str());
 
     if (!dumper) {
+        // --- DÒNG ĐÃ SỬA LỖI ---
+        // Đã đổi 'handle' thành 'pcap_handle'
         QMessageBox::critical(this, "Save Error", QString("Could not open file for writing: %1").arg(pcap_geterr(pcap_handle)));
         pcap_close(pcap_handle);
         return;
@@ -126,6 +234,7 @@ void CapturePage::saveCurrentCapture()
     pcap_close(pcap_handle);
     QMessageBox::information(this, "Save Successful", QString("Successfully saved %1 packets to file.").arg(capturedPackets.size()));
 }
+
 // --- CÁC SLOT VÀ HÀM NỘI BỘ ---
 void CapturePage::onRestartCaptureClicked() { if (isLiveCapture) startCaptureInternal(); }
 
@@ -144,11 +253,16 @@ void CapturePage::onPauseCaptureClicked() {
     }
 }
 
+/**
+ * @brief Hàm nội bộ để khởi tạo hoặc khởi động lại 'scanner'.
+ */
 void CapturePage::startCaptureInternal() {
     if (scanner) {
         if(scanner->isRunning()) { scanner->stopCapture(); scanner->wait(); }
         scanner->deleteLater();
     }
+
+    // Xóa cả master list VÀ bảng hiển thị
     capturedPackets.clear();
     viewer->clearData();
 
@@ -157,15 +271,23 @@ void CapturePage::startCaptureInternal() {
     isPaused = false;
     pauseBtn->setText("Pause");
 
+    // Khởi tạo PacketSniffer, truyền Capture Filter (nếu có)
     if (isLiveCapture) {
-        scanner = new PacketSniffer(currentCaptureSource, this);
+        scanner = new PacketSniffer(currentCaptureSource, m_captureFilter, this);
     } else {
+        // ĐỌC FILE
         scanner = new PacketSniffer(currentCaptureSource, true, this);
     }
 
+    // Kết nối signal khi có gói tin mới
     connect(scanner, &PacketSniffer::packetCaptured, this, [this](const PacketInfo &packet){
-        viewer->addPacket(packet);
+        // 1. LUÔN LUÔN lưu vào master list
         capturedPackets.append(packet);
+
+        // 2. CHỈ hiển thị nếu nó khớp với m_displayFilter
+        if (packetMatchesFilter(packet, m_displayFilter)) {
+            viewer->addPacket(packet);
+        }
     });
 
     connect(scanner, &PacketSniffer::errorOccurred, this, [this](const QString &errorString){
