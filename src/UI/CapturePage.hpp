@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QList>
 #include "PacketInfo.hpp"
+#include "StatisticsManager.hpp" // <-- THÊM MỚI
 
 // Khai báo trước (Forward declarations)
 class QPushButton;
@@ -11,6 +12,7 @@ class QLabel;
 class NetworkViewer;
 class PacketSniffer;
 class QLineEdit;
+class StatisticsManager; // <-- THÊM MỚI
 
 class CapturePage : public QWidget
 {
@@ -28,26 +30,13 @@ private slots:
     void onRestartCaptureClicked();
     void onStopCaptureClicked();
     void onPauseCaptureClicked();
-    void onApplyFilterClicked(); // Slot này vẫn được dùng
+    void onApplyFilterClicked();
+    void onStatisticsClicked();
 
 private:
     void startCaptureInternal();
-
-    // --- THÊM MỚI: Logic cho Display Filter ---
-    /**
-     * @brief Lặp lại toàn bộ 'capturedPackets' và hiển thị lại chúng
-     * trong 'viewer' dựa trên 'currentFilter'.
-     */
     void refreshPacketView();
-
-    /**
-     * @brief Kiểm tra xem một gói tin có khớp với chuỗi filter không.
-     * @param packet Gói tin cần kiểm tra.
-     * @param filter Chuỗi filter (đã chuyển sang chữ thường).
-     * @return true nếu khớp, false nếu không.
-     */
     bool packetMatchesFilter(const PacketInfo& packet, const QString& filter);
-    // --- KẾT THÚC PHẦN THÊM MỚI ---
 
     // --- BIẾN THÀNH VIÊN ---
     QLabel *sourceNameLabel;
@@ -57,6 +46,7 @@ private:
     QPushButton *restartBtn;
     QPushButton *stopBtn;
     QPushButton *pauseBtn;
+    QPushButton *statisticsBtn;
     NetworkViewer *viewer;
     PacketSniffer *scanner;
     bool isPaused;
@@ -68,6 +58,9 @@ private:
     // --- Biến lưu trữ filter (vẫn giữ) ---
     QString m_displayFilter;
     QString m_captureFilter;
+
+    // --- THÊM MỚI: Trình quản lý Thống kê ---
+    StatisticsManager *m_statsManager;
 
     // Bộ nhớ đệm để lưu các gói tin, giống như WiShark
     QList<PacketInfo> capturedPackets;

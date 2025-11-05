@@ -20,6 +20,8 @@ add_library(UILib STATIC
 
     WelcomePage.hpp
     WelcomePage.cpp
+    StatisticsDialog.hpp StatisticsDialog.cpp
+    StatisticsManager.hpp StatisticsManager.cpp
 )
 
 # Cho phép các module khác include file header trong UI/

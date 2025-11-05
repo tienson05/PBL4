@@ -4,11 +4,11 @@
 #include <QTreeWidget>
 #include <QTextEdit>
 #include <QSplitter>
-#include <QLabel> // Thêm header cho thanh trạng thái
-#include <QMap>   // Thêm header để lưu trữ số lượng gói tin
+#include <QLabel>
+// #include <QMap> // <- Không cần thiết ở đây nữa
 #include "PacketInfo.hpp"
 
-// Forward declarations for protocol headers to keep this file clean
+// (Khai báo trước giữ nguyên)
 struct ether_header;
 struct ether_arp;
 struct ip;
@@ -27,6 +27,12 @@ public slots:
     void addPacket(const PacketInfo &packet);
     void clearData(); // Slot để xóa dữ liệu khi bắt đầu phiên mới
 
+    /**
+     * @brief (THÊM MỚI) Slot câm, chỉ nhận chuỗi đã định dạng
+     * từ StatisticsManager và hiển thị nó.
+     */
+    void updateStatsString(const QString &statsString);
+
 private slots:
     void onPacketSelected();
 
@@ -35,7 +41,7 @@ private:
     void displayPacketDetails(const QByteArray &rawData);
     void displayHexDump(const QByteArray &rawData);
     QString parseDnsName(const u_char* &reader, const u_char* start_of_packet);
-    void updateStats(); // Hàm cập nhật thanh trạng thái
+    // void updateStats(); // <-- ĐÃ XÓA
 
     // Giao diện
     QSplitter *mainSplitter;
@@ -43,10 +49,9 @@ private:
     QTableWidget *packetListTable;
     QTreeWidget *packetDetailsTree;
     QTextEdit *rawDataText;
-    QLabel *statsLabel; // Thanh trạng thái hiển thị thống kê
+    QLabel *statsLabel; // Vẫn giữ thanh trạng thái
 
-    // Dữ liệu thống kê
-    int totalPacketCount;
-    QMap<QString, int> protocolCounts;
+    // --- CÁC BIẾN NÀY ĐÃ BỊ XÓA ---
+    // int totalPacketCount;
+    // QMap<QString, int> protocolCounts;
 };
-

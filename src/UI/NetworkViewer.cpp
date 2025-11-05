@@ -7,16 +7,16 @@
 #include <QStringList>
 #include <net/ethernet.h>
 #include <netinet/ether.h>
-#include <algorithm> // Cần cho std::sort
+// #include <algorithm> // <- Không cần sắp xếp ở đây nữa
 
 #include <netinet/ip.h>
-#include <netinet/tcp.h>
+#include <netinet/tcp.h> // <-- Thêm các include còn thiếu
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 #include <net/if_arp.h>
 #include <arpa/inet.h>
 
-// Các cấu trúc header chưa được định nghĩa trong các file hệ thống chuẩn
+// (Các struct header (dns_header, dhcp_header) giữ nguyên)
 struct dns_header {
     quint16 id; quint16 flags;
     quint16 num_questions; quint16 num_answers;
@@ -36,9 +36,10 @@ struct dhcp_header {
 
 
 NetworkViewer::NetworkViewer(QWidget *parent) : QWidget(parent) {
-    totalPacketCount = 0;
+    // totalPacketCount = 0; // <-- ĐÃ XÓA
 
     // --- Khởi tạo các thành phần giao diện ---
+    // (Toàn bộ phần khởi tạo UI giữ nguyên)
     packetListTable = new QTableWidget(0, 7, this);
     packetListTable->setHorizontalHeaderLabels({"No.", "Time", "Source", "Destination", "Protocol", "Length", "Info"});
     packetListTable->horizontalHeader()->setStretchLastSection(true);
@@ -56,13 +57,11 @@ NetworkViewer::NetworkViewer(QWidget *parent) : QWidget(parent) {
     rawDataText->setReadOnly(true);
     rawDataText->setFontFamily("Monospace");
 
-    // --- THÊM MỚI: Khởi tạo thanh trạng thái ---
     statsLabel = new QLabel("Ready to capture.", this);
     statsLabel->setFrameStyle(QFrame::Panel | QFrame::Sunken);
     statsLabel->setMinimumHeight(24);
     statsLabel->setIndent(5);
 
-    // --- Sắp xếp giao diện ---
     bottomSplitter = new QSplitter(Qt::Horizontal);
     bottomSplitter->addWidget(packetDetailsTree);
     bottomSplitter->addWidget(rawDataText);
@@ -76,23 +75,33 @@ NetworkViewer::NetworkViewer(QWidget *parent) : QWidget(parent) {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(mainSplitter);
-    layout->addWidget(statsLabel); // Thêm thanh trạng thái vào cuối layout
+    layout->addWidget(statsLabel);
     setLayout(layout);
 
     connect(packetListTable, &QTableWidget::itemSelectionChanged, this, &NetworkViewer::onPacketSelected);
 }
 
+// --- THÊM MỚI: Slot để cập nhật thanh trạng thái ---
+void NetworkViewer::updateStatsString(const QString &statsString)
+{
+    statsLabel->setText(statsString);
+}
+
+
 void NetworkViewer::addPacket(const PacketInfo &packet) {
     QScrollBar *vbar = packetListTable->verticalScrollBar();
     bool atBottom = (vbar->value() == vbar->maximum());
 
-    totalPacketCount++;
-    protocolCounts[packet.protocol]++;
-    updateStats();
+    // --- LOGIC ĐẾM ĐÃ BỊ XÓA ---
+    // totalPacketCount++;
+    // protocolCounts[packet.protocol]++;
+    // updateStats();
+    // --- KẾT THÚC PHẦN XÓA ---
 
     int row = packetListTable->rowCount();
     packetListTable->insertRow(row);
 
+    // (Phần thêm item vào bảng giữ nguyên)
     QTableWidgetItem *noItem = new QTableWidgetItem(QString::number(row + 1));
     noItem->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
     noItem->setData(Qt::UserRole, packet.rawData);
@@ -107,6 +116,7 @@ void NetworkViewer::addPacket(const PacketInfo &packet) {
         new QTableWidgetItem(packet.info)
     };
 
+    // (Code tô màu giữ nguyên)
     QColor color;
     if (packet.protocol == "TCP" || packet.protocol == "HTTP" || packet.protocol == "TLS") color.setRgb(230, 245, 225);
     else if (packet.protocol == "UDP" || packet.protocol == "DNS" || packet.protocol == "MDNS" || packet.protocol == "DHCP") color.setRgb(225, 240, 255);
@@ -118,46 +128,31 @@ void NetworkViewer::addPacket(const PacketInfo &packet) {
         items[i]->setBackground(color);
         packetListTable->setItem(row, i, items[i]);
     }
+
     if (atBottom) {
         packetListTable->scrollToBottom();
     }
 }
 
-// THÊM MỚI: Hàm để xóa dữ liệu cũ khi bắt đầu phiên bắt mới
+// --- HÀM clearData ĐÃ SỬA ---
 void NetworkViewer::clearData() {
     packetListTable->setRowCount(0);
     packetDetailsTree->clear();
     rawDataText->clear();
-    totalPacketCount = 0;
-    protocolCounts.clear();
-    updateStats(); // Cập nhật lại thanh trạng thái về giá trị ban đầu
+
+    // --- LOGIC ĐẾM ĐÃ BỊ XÓA ---
+    // totalPacketCount = 0;
+    // protocolCounts.clear();
+
+    // Chỉ reset label về mặc định
+    statsLabel->setText("Ready to capture.");
 }
 
-// THÊM MỚI: Hàm để cập nhật nội dung thanh trạng thái
-void NetworkViewer::updateStats() {
-    if (totalPacketCount == 0) {
-        statsLabel->setText("Ready to capture.");
-        return;
-    }
-
-    QString statsText = QString("Total Packets: %1 | ").arg(totalPacketCount);
-    QList<QPair<int, QString>> sortedProtocols;
-    for (auto it = protocolCounts.constBegin(); it != protocolCounts.constEnd(); ++it) {
-        sortedProtocols.append(qMakePair(it.value(), it.key()));
-    }
-    // Sắp xếp theo số lượng giảm dần
-    std::sort(sortedProtocols.rbegin(), sortedProtocols.rend());
-
-    QStringList protocolStrings;
-    for (const auto &pair : sortedProtocols) {
-        protocolStrings << QString("%1: %2").arg(pair.second).arg(pair.first);
-    }
-
-    statsText += protocolStrings.join(" | ");
-    statsLabel->setText(statsText);
-}
+// --- HÀM updateStats() ĐÃ BỊ XÓA TOÀN BỘ ---
+// void NetworkViewer::updateStats() { ... }
 
 
+// --- CÁC HÀM PHÂN TÍCH GÓI TIN (Giữ nguyên 100%) ---
 void NetworkViewer::onPacketSelected() {
     auto selectedItems = packetListTable->selectedItems();
     if (selectedItems.isEmpty()) {
@@ -316,4 +311,3 @@ void NetworkViewer::displayHexDump(const QByteArray &rawData) {
     hexView += " " + asciiView;
     rawDataText->setText(hexView);
 }
-
